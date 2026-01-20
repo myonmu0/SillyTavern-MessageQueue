@@ -1,10 +1,11 @@
 # Message Queue
-Message Queue extension for SillyTavern.
+Send message to queue while generation, now you don't have to wait until generation end to send next messages.<br /><br />
+![example](https://github.com/myonmu0/SillyTavern-MessageQueue/blob/main/demo.png)
 
-## Installation
+## Install
 SillyTavern > Extensions > Install extension > copy&paste this github url and install.
 
-## Usage
+## Tips
 - Enable/Disable on Extensions tab
 - Press SHIFT + DEL on chat box to delete last queue, hold to delete all.
 
@@ -12,4 +13,4 @@ SillyTavern > Extensions > Install extension > copy&paste this github url and in
 - If you switch browser tab and hide SillyTavern tab, queue text sending will pause until tab are visible again.
 
 
-*Enjoy!*
+**Enjoy!**

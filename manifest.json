@@ -1,0 +1,10 @@
+{
+    "display_name": "Message Queue",
+    "loading_order": 9,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "author": "myonmu0",
+    "version": "1.0.0",
+    "homePage": "https://github.com/myonmu0/SillyTavern-MessageQueue"
+}

@@ -20,7 +20,7 @@ SillyTavern > Extensions > Install extension > copy&paste this github url and in
   ```
 
 ## Limitation 
-- If you switch browser tab and hide SillyTavern tab, queue text sending will pause until tab are visible again.
+- If you switch browser tab and hide SillyTavern tab, queue text sending will pause until tab are visible again. Switching workspaces(Virtual Desktop) may work fine.
 
 
 **Enjoy!**

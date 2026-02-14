@@ -165,8 +165,6 @@ function messageQueue_init() {
 
                         const textToSend =  messageQueue[0]
                         const sendButton = document.getElementById('send_but');
-                        const sendTextarea_style_back_height = sendTextarea.style.height;
-                        const sendTextarea_style_back_overflow = sendTextarea.style.overflow;
 
                         sendTextarea.readOnly = true;
                         sendTextarea.style.setProperty('height', '', 'important');
@@ -178,7 +176,13 @@ function messageQueue_init() {
                             if (sendButton) {
                                 // Final check of textarea
                                 if(sendTextarea.value == textToSend && document.visibilityState === 'visible') {
-                                    sendButton.click();
+                                    //sendButton.click();
+                                    const clickEvent = new MouseEvent('click', {
+                                      view: window,
+                                      bubbles: true,
+                                      cancelable: true
+                                    });
+                                    sendButton.dispatchEvent(clickEvent);
                                     messageQueue_dequeue();
                                 // Remove added text if user are typing
                                 } else {
@@ -187,8 +191,7 @@ function messageQueue_init() {
                             }
                             setTimeout(function() {
                                 sendTextarea.readOnly = false;
-                                sendTextarea.style.height = sendTextarea_style_back_height;
-                                sendTextarea.style.overflow = sendTextarea_style_back_overflow;
+                                sendTextarea.style.overflow = '';
                                 sendButton.style.pointerEvents = '';
                             }, 100);
                         }, 200);
@@ -251,7 +254,7 @@ function messageQueue_enqueueText(text) {
     }
 }
 
-function messageQueue_sendToQueue(event) {
+function messageQueue_sendTextAreaToQueue(event) {
     const sendTextarea = document.getElementById('send_textarea');
     if (sendTextarea) {
         const textContent = sendTextarea.value;
@@ -301,26 +304,32 @@ function messageQueue_dequeue() {
 function　messageQueue_hook_form_sheld(e) {
 
     if (e.key === 'Enter' && !e.shiftKey) {
-    
-        const sendButton = document.getElementById('send_but');
-        const computedStyle = getComputedStyle(sendButton);
-        
-        // Split function
-        if (messageQueue_split === true && messageQueue_split_delimiter != "") {
-        const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
-        if( regex.test(document.getElementById('send_textarea').value)) {
-           e.preventDefault();
-           e.stopPropagation();
-           messageQueue_sendToQueue(e);
-          }
-        }
+        const sendTextarea = document.getElementById('send_textarea');
+        if ( sendTextarea.readOnly === false ) {
+            const sendButton = document.getElementById('send_but');
+            const computedStyle = getComputedStyle(sendButton);
 
-        if (messageQueue.length >0 || computedStyle.display != "flex") {
-         e.preventDefault();
-         e.stopPropagation();
-         messageQueue_sendToQueue(e);
-        }
+            if (messageQueue.length > 0 || computedStyle.display != "flex") {
+               e.preventDefault();
+               e.stopPropagation();
+               messageQueue_sendTextAreaToQueue(e);
 
+            // Split function
+            } else if (messageQueue_split === true && messageQueue_split_delimiter != "") {
+                // To split when queue are empty
+                const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
+                if(regex.test(sendTextarea.value)) {
+                     sendTextarea.value.split(regex).forEach((part, index) => {
+                        if (index === 0) {
+                          sendTextarea.value = part;
+                        } else {
+                          messageQueue_enqueueText(part.trim());
+                        }
+                     });
+                }
+            }
+            sendTextarea.dispatchEvent(new Event('input'));
+        }
     } else if (e.key === 'Delete' && e.shiftKey) {
         if( e.target.id == "send_textarea" ) {
           messageQueue_dequeueLast();
@@ -330,23 +339,30 @@ function　messageQueue_hook_form_sheld(e) {
 
 // Hook send_but
 function　messageQueue_hook_send_but(e) {
-    if ( document.getElementById('send_textarea').readOnly === false ) {
+    const sendTextarea = document.getElementById('send_textarea');
+
+    if ( sendTextarea.readOnly === false ) {
       if ( messageQueue.length >0 ) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation(); 
-        messageQueue_sendToQueue(e);
+        messageQueue_sendTextAreaToQueue(e);
 
-      // Split
+      // To split when queue are empty
       } else if ( messageQueue_split === true && messageQueue_split_delimiter != "") {
         const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
-        if( regex.test(document.getElementById('send_textarea').value)) {
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation(); 
-          messageQueue_sendToQueue(e);
+        if(regex.test(sendTextarea.value)) {
+          sendTextarea.value.split(regex).forEach((part, index) => {
+            if (index === 0) {
+              sendTextarea.value = part;
+            } else {
+              messageQueue_enqueueText(part.trim());
+            }
+          });
         }
       }
+
+      sendTextarea.dispatchEvent(new Event('input'));
     }
 }
 

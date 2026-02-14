@@ -15,25 +15,29 @@ const defaultSettings = {};
 
 // Loads the extension settings if they exist, otherwise initializes them to the defaults.
 async function loadSettings() {
-  console.log(extension_settings[extensionName])
   //Create the settings if they don't exist
   extension_settings[extensionName] = extension_settings[extensionName] || {};
-  if (Object.keys(extension_settings[extensionName]).length === 0) {
+  if (Object.keys(extension_settings[extensionName]).length === 0 ||
+      extension_settings[extensionName].messagequeue_setting_split_enable === undefined ||
+      extension_settings[extensionName].messagequeue_setting_split_delimiter === undefined) {
 
     // Default values
     Object.assign(extension_settings[extensionName], defaultSettings);
-    extension_settings[extensionName].example_setting = true;
+    extension_settings[extensionName].messagequeue_setting_enable = true;
+    extension_settings[extensionName].messagequeue_setting_split_enable = false;
+    extension_settings[extensionName].messagequeue_setting_split_delimiter = "|||";
     saveSettingsDebounced();
   }
 
   // Updating settings in the UI
-  $("#messagequeue_setting_enable").prop("checked", extension_settings[extensionName].example_setting).trigger("input");
+  $("#messagequeue_setting_enable").prop("checked", extension_settings[extensionName].messagequeue_setting_enable).trigger("input");
+  $("#messagequeue_setting_split_enable").prop("checked", extension_settings[extensionName].messagequeue_setting_split_enable).trigger("input");
+  $("#messagequeue_setting_split_delimiter").val(extension_settings[extensionName].messagequeue_setting_split_delimiter).trigger("input");
 }
 
-// This function is called when the extension settings are changed in the UI
-function onExampleInput(event) {
+function onMessageQueueSetting_enable(event) {
   const value = Boolean($(event.target).prop("checked"));
-  extension_settings[extensionName].example_setting = value;
+  extension_settings[extensionName].messagequeue_setting_enable = value;
   saveSettingsDebounced();
 
   // Enable extention
@@ -46,6 +50,26 @@ function onExampleInput(event) {
   }
 }
 
+function onMessageQueueSetting_split(event) {
+  const value = Boolean($(event.target).prop("checked"));
+  extension_settings[extensionName].messagequeue_setting_split_enable = value;
+  saveSettingsDebounced();
+
+  if( value == true ) {
+     messageQueue_split = true
+  } else {
+     messageQueue_split = false
+  }
+}
+
+function onMessageQueueSetting_splitDelimiter(event) {
+  const value = $(event.target).val();
+  extension_settings[extensionName].messagequeue_setting_split_delimiter = value;
+  saveSettingsDebounced();
+
+  messageQueue_split_delimiter = value;
+}
+
 
 // This function is called when the extension is loaded
 jQuery(async () => {
@@ -53,18 +77,25 @@ jQuery(async () => {
   const settingsHtml = await $.get(`${extensionFolderPath}/config.html`);
 
   $("#extensions_settings").append(settingsHtml);
-  $("#messagequeue_setting_enable").on("input", onExampleInput);
+  $("#messagequeue_setting_enable").on("input", onMessageQueueSetting_enable);
+  $("#messagequeue_setting_split_enable").on("input", onMessageQueueSetting_split);
+  $("#messagequeue_setting_split_delimiter").on("input", onMessageQueueSetting_splitDelimiter);
 
   // Load settings when starting things up (if you have any)
   loadSettings();
+
+  // Init Message Queue
+  messageQueue_waitToInit();
 });
 
 
-
-// -----------------------------
+// Globals
 window.messageQueue = window.messageQueue || [];
-messageQueue_waitToInit();
+window.messageQueue_split = window.messageQueue_split || false;
+window.messageQueue_split_delimiter = window.messageQueue_split_delimiter || "";
 
+
+// Functions
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -75,9 +106,8 @@ async function messageQueue_waitToInit(message, delay = 10) {
 }
 
 function messageQueue_init() {
-    
-    insertBadge('send_but', 'custom-badge-queue');
-    insertBadge('mes_stop', 'custom-badge-queue2');
+    insertBadge('send_but', 'messageQueue-count-badge1');
+    insertBadge('mes_stop', 'messageQueue-count-badge2');
 
     function insertBadge(targetElementId, newId) {
           const targetElement = document.getElementById(targetElementId);
@@ -119,13 +149,61 @@ function messageQueue_init() {
           
           return badge;
       }
+
+    // Send message from queue
+    setInterval(function() {
+        if (messageQueue.length >0 && document.visibilityState === 'visible') {
+          const sendButton = document.getElementById('send_but');
+          const sendTextarea = document.getElementById('send_textarea');
+          
+          if (sendButton && sendTextarea && sendTextarea.readOnly === false) {
+              const displayStyle = getComputedStyle(sendButton).display;
+
+              if (displayStyle === 'flex') {
+                    const sendTextarea = document.getElementById('send_textarea');
+                    if (sendTextarea.value == '') {
+
+                        const textToSend =  messageQueue[0]
+                        const sendButton = document.getElementById('send_but');
+                        const sendTextarea_style_back_height = sendTextarea.style.height;
+                        const sendTextarea_style_back_overflow = sendTextarea.style.overflow;
+
+                        sendTextarea.readOnly = true;
+                        sendTextarea.style.setProperty('height', '', 'important');
+                        sendTextarea.style.setProperty('overflow', 'hidden', 'important');
+                        sendTextarea.value = textToSend;
+                        sendButton.style.pointerEvents = 'none';
+
+                       setTimeout(function() {
+                            if (sendButton) {
+                                // Final check of textarea
+                                if(sendTextarea.value == textToSend && document.visibilityState === 'visible') {
+                                    sendButton.click();
+                                    messageQueue_dequeue();
+                                // Remove added text if user are typing
+                                } else {
+                                    sendTextarea.value = messageQueue_removeFirstMatch(sendTextarea.value, textToSend);
+                                }
+                            }
+                            setTimeout(function() {
+                                sendTextarea.readOnly = false;
+                                sendTextarea.style.height = sendTextarea_style_back_height;
+                                sendTextarea.style.overflow = sendTextarea_style_back_overflow;
+                                sendButton.style.pointerEvents = '';
+                            }, 100);
+                        }, 200);
+                      }
+                     }
+                  }
+          }
+    }, 500);
 }
 
 function messageQueue_getBadge() {
-    return document.querySelector('.custom-badge-queue');
+    return document.querySelector('.messageQueue-count-badge1');
 }
 function messageQueue_getBadge2() {
-    return document.querySelector('.custom-badge-queue2');
+    return document.querySelector('.messageQueue-count-badge2');
 }
 
 function messageQueue_updateBadge(count) {
@@ -160,27 +238,38 @@ function messageQueue_updateBadge(count) {
     }
 }
 
+function messageQueue_enqueueText(text) {
+    if (text) {
+      messageQueue.push(text);
+
+        const badge = messageQueue_getBadge();
+        if (badge) {
+            const currentCount = parseInt(badge.textContent) || 0;
+            const newCount = currentCount + 1;
+            messageQueue_updateBadge(newCount); 
+        }
+    }
+}
 
 function messageQueue_sendToQueue(event) {
     const sendTextarea = document.getElementById('send_textarea');
     if (sendTextarea) {
         const textContent = sendTextarea.value;
-        if (textContent) {
-          sendTextarea.value = '';
-          messageQueue.push(textContent);
+        sendTextarea.value = '';
 
-            const badge = messageQueue_getBadge();
-            if (badge) {
-                const currentCount = parseInt(badge.textContent) || 0;
-                const newCount = currentCount + 1;
-                messageQueue_updateBadge(newCount); 
-            }
+        // Split
+        if( messageQueue_split === true && messageQueue_split_delimiter != "") {
+            const regex = new RegExp( messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
+            textContent.split(regex).forEach((part, index) => {
+              messageQueue_enqueueText(part.trim());
+            });
+        } else {
+          messageQueue_enqueueText(textContent);
         }
      }
 }
 
-
-function messageQueue_dequeueLastAndUpdateBadge() {
+function messageQueue_dequeueLast() {
     if (messageQueue.length > 0) {
         const removedText = messageQueue.pop();
         const badge = messageQueue_getBadge();
@@ -194,8 +283,7 @@ function messageQueue_dequeueLastAndUpdateBadge() {
     return null;
 }
 
-
-function messageQueue_dequeueAndUpdateBadge() {
+function messageQueue_dequeue() {
     if (messageQueue.length > 0) {
         const removedText = messageQueue.shift();
         const badge = messageQueue_getBadge();
@@ -209,7 +297,6 @@ function messageQueue_dequeueAndUpdateBadge() {
     return null;
 }
 
-
 // Hook form_sheld
 function　messageQueue_hook_form_sheld(e) {
 
@@ -218,29 +305,50 @@ function　messageQueue_hook_form_sheld(e) {
         const sendButton = document.getElementById('send_but');
         const computedStyle = getComputedStyle(sendButton);
         
-        if( messageQueue.length >0 || computedStyle.display != "flex") {
+        // Split function
+        if (messageQueue_split === true && messageQueue_split_delimiter != "") {
+        const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
+        if( regex.test(document.getElementById('send_textarea').value)) {
            e.preventDefault();
            e.stopPropagation();
            messageQueue_sendToQueue(e);
           }
+        }
+
+        if (messageQueue.length >0 || computedStyle.display != "flex") {
+         e.preventDefault();
+         e.stopPropagation();
+         messageQueue_sendToQueue(e);
+        }
 
     } else if (e.key === 'Delete' && e.shiftKey) {
         if( e.target.id == "send_textarea" ) {
-          messageQueue_dequeueLastAndUpdateBadge();
+          messageQueue_dequeueLast();
         }
     }
 }
 
 // Hook send_but
 function　messageQueue_hook_send_but(e) {
-    if( messageQueue.length >0 && document.getElementById('send_textarea').readOnly === false ) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation(); 
-      messageQueue_sendToQueue(e);
+    if ( document.getElementById('send_textarea').readOnly === false ) {
+      if ( messageQueue.length >0 ) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation(); 
+        messageQueue_sendToQueue(e);
+
+      // Split
+      } else if ( messageQueue_split === true && messageQueue_split_delimiter != "") {
+        const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
+        if( regex.test(document.getElementById('send_textarea').value)) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation(); 
+          messageQueue_sendToQueue(e);
+        }
+      }
     }
 }
-
 
 function messageQueue_addHook() {
     const formShield = document.getElementById('form_sheld');
@@ -259,49 +367,6 @@ function messageQueue_removeHook() {
       sendBut.removeEventListener('click', messageQueue_hook_send_but, true);
     }
 }
-
-
-window.monitorTimer = setInterval(function() {
-    if (messageQueue.length >0 && document.visibilityState === 'visible') {
-      const sendButton = document.getElementById('send_but');
-      const sendTextarea = document.getElementById('send_textarea');
-      
-      if (sendButton && sendTextarea && sendTextarea.readOnly === false) {
-          const displayStyle = getComputedStyle(sendButton).display;
-
-          if (displayStyle === 'flex') {
-                const sendTextarea = document.getElementById('send_textarea');
-                if (sendTextarea.value == '') {
-
-                    const textToSend =  messageQueue[0]
-                    const sendButton = document.getElementById('send_but');
-
-                    sendTextarea.readOnly = true;
-                    sendButton.style.pointerEvents = 'none';
-                    sendTextarea.value = textToSend;
-
-                   setTimeout(function() {
-                        if (sendButton) {
-                            // Final check of textarea
-                            if(sendTextarea.value == textToSend && document.visibilityState === 'visible') {
-                                sendButton.click();
-                                messageQueue_dequeueAndUpdateBadge();
-                            // Remove added text if user are typing
-                            } else {
-                                sendTextarea.value = messageQueue_removeFirstMatch(sendTextarea.value, textToSend);
-                            }
-                        }
-                        setTimeout(function() {
-                            sendTextarea.readOnly = false;
-                            sendButton.style.pointerEvents = '';
-                        }, 100);
-                    }, 200);
-                  }
-                 }
-              }
-      }
-}, 500);
-
 
 function messageQueue_removeFirstMatch(str, target) {
     if (!str || !target) return str;

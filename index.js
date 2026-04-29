@@ -6,6 +6,7 @@ import { extension_settings, getContext, loadExtensionSettings } from "../../../
 
 //You'll likely need to import some other functions from the main script
 import { saveSettingsDebounced } from "../../../../script.js";
+import { is_send_press, substituteParams, sendTextareaMessage } from "../../../../script.js";
 
 // Keep track of where your extension is located, name should match repo name
 const extensionName = "SillyTavern-MessageQueue";
@@ -151,54 +152,42 @@ function messageQueue_init() {
       }
 
     // Send message from queue
-    setInterval(function() {
-        if (messageQueue.length >0 && document.visibilityState === 'visible') {
+    setInterval(async function() {
+        if (messageQueue.length >0 && !is_send_press) {
           const sendButton = document.getElementById('send_but');
           const sendTextarea = document.getElementById('send_textarea');
-          
-          if (sendButton && sendTextarea && sendTextarea.readOnly === false) {
-              const displayStyle = getComputedStyle(sendButton).display;
 
-              if (displayStyle === 'flex') {
-                    const sendTextarea = document.getElementById('send_textarea');
-                    if (sendTextarea.value == '') {
+          if (sendTextarea.value == '') {
+            sendTextarea.readOnly = true;
+            sendButton.style.pointerEvents = 'none';
 
-                        const textToSend =  messageQueue[0]
-                        const sendButton = document.getElementById('send_but');
+            const textToSendRaw = messageQueue_dequeue();
+            const textToSend =  substituteParams(textToSendRaw);
 
-                        sendTextarea.readOnly = true;
-                        sendTextarea.style.setProperty('height', '', 'important');
-                        sendTextarea.style.setProperty('overflow', 'hidden', 'important');
-                        sendTextarea.value = textToSend;
-                        sendButton.style.pointerEvents = 'none';
+            sendTextarea.style.setProperty('height', '', 'important');
+            sendTextarea.style.setProperty('overflow', 'hidden', 'important');
+            sendTextarea.value = textToSend;
+            sendTextarea.dispatchEvent(new Event('input', { bubbles: true }));
 
-                       setTimeout(function() {
-                            if (sendButton) {
-                                // Final check of textarea
-                                if(sendTextarea.value == textToSend && document.visibilityState === 'visible') {
-                                    //sendButton.click();
-                                    const clickEvent = new MouseEvent('click', {
-                                      view: window,
-                                      bubbles: true,
-                                      cancelable: true
-                                    });
-                                    sendButton.dispatchEvent(clickEvent);
-                                    messageQueue_dequeue();
-                                // Remove added text if user are typing
-                                } else {
-                                    sendTextarea.value = messageQueue_removeFirstMatch(sendTextarea.value, textToSend);
-                                }
-                            }
-                            setTimeout(function() {
-                                sendTextarea.readOnly = false;
-                                sendTextarea.style.overflow = '';
-                                sendButton.style.pointerEvents = '';
-                            }, 100);
-                        }, 200);
-                      }
-                     }
-                  }
-          }
+            // Restore textarea when message are sent
+            const checkMessage = setInterval(() => {
+              const ta = document.getElementById('send_textarea');
+              
+              if (sendTextarea.value == '') {
+                sendTextarea.readOnly = false;
+                sendTextarea.style.overflow = '';
+                sendButton.style.pointerEvents = '';
+                clearInterval(checkMessage);
+              }
+            }, 20);
+
+            // Generate
+            try {
+              await sendTextareaMessage();
+            } catch {
+            }
+         }
+       }
     }, 500);
 }
 
@@ -305,31 +294,29 @@ function　messageQueue_hook_form_sheld(e) {
 
     if (e.key === 'Enter' && !e.shiftKey) {
         const sendTextarea = document.getElementById('send_textarea');
-        if ( sendTextarea.readOnly === false ) {
-            const sendButton = document.getElementById('send_but');
-            const computedStyle = getComputedStyle(sendButton);
+        const sendButton = document.getElementById('send_but');
+        const computedStyle = getComputedStyle(sendButton);
 
-            if (messageQueue.length > 0 || computedStyle.display != "flex") {
-               e.preventDefault();
-               e.stopPropagation();
-               messageQueue_sendTextAreaToQueue(e);
+        if (messageQueue.length > 0 || is_send_press) {
+           e.preventDefault();
+           e.stopPropagation();
+           messageQueue_sendTextAreaToQueue(e);
 
-            // Split function
-            } else if (messageQueue_split === true && messageQueue_split_delimiter != "") {
-                // To split when queue are empty
-                const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
-                if(regex.test(sendTextarea.value)) {
-                     sendTextarea.value.split(regex).forEach((part, index) => {
-                        if (index === 0) {
-                          sendTextarea.value = part;
-                        } else {
-                          messageQueue_enqueueText(part.trim());
-                        }
-                     });
-                }
+        // Split function
+        } else if (messageQueue_split === true && messageQueue_split_delimiter != "") {
+            // To split when queue are empty
+            const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
+            if(regex.test(sendTextarea.value)) {
+                 sendTextarea.value.split(regex).forEach((part, index) => {
+                    if (index === 0) {
+                      sendTextarea.value = part;
+                    } else {
+                      messageQueue_enqueueText(part.trim());
+                    }
+                 });
             }
-            sendTextarea.dispatchEvent(new Event('input'));
         }
+        sendTextarea.dispatchEvent(new Event('input'));
     } else if (e.key === 'Delete' && e.shiftKey) {
         if( e.target.id == "send_textarea" ) {
           messageQueue_dequeueLast();
@@ -341,29 +328,27 @@ function　messageQueue_hook_form_sheld(e) {
 function　messageQueue_hook_send_but(e) {
     const sendTextarea = document.getElementById('send_textarea');
 
-    if ( sendTextarea.readOnly === false ) {
-      if ( messageQueue.length >0 ) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation(); 
-        messageQueue_sendTextAreaToQueue(e);
+    if ( messageQueue.length >0 || is_send_press ) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation(); 
+      messageQueue_sendTextAreaToQueue(e);
 
-      // To split when queue are empty
-      } else if ( messageQueue_split === true && messageQueue_split_delimiter != "") {
-        const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
-        if(regex.test(sendTextarea.value)) {
-          sendTextarea.value.split(regex).forEach((part, index) => {
-            if (index === 0) {
-              sendTextarea.value = part;
-            } else {
-              messageQueue_enqueueText(part.trim());
-            }
-          });
-        }
+    // To split when queue are empty
+    } else if ( messageQueue_split === true && messageQueue_split_delimiter != "") {
+      const regex = new RegExp(messageQueue_split_delimiter.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'));
+      if(regex.test(sendTextarea.value)) {
+        sendTextarea.value.split(regex).forEach((part, index) => {
+          if (index === 0) {
+            sendTextarea.value = part;
+          } else {
+            messageQueue_enqueueText(part.trim());
+          }
+        });
       }
-
-      sendTextarea.dispatchEvent(new Event('input'));
     }
+
+    sendTextarea.dispatchEvent(new Event('input'));
 }
 
 function messageQueue_addHook() {
@@ -382,15 +367,4 @@ function messageQueue_removeHook() {
       formShield.removeEventListener('keydown', messageQueue_hook_form_sheld);
       sendBut.removeEventListener('click', messageQueue_hook_send_but, true);
     }
-}
-
-function messageQueue_removeFirstMatch(str, target) {
-    if (!str || !target) return str;
-
-    const escapeRegExp = (string) => {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    };
-
-    const regex = new RegExp(escapeRegExp(target));
-    return str.replace(regex, "");
 }
